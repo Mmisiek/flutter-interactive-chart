@@ -4,12 +4,23 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:intl/intl.dart' as intl;
 
+import '../interactive_chart.dart';
 import 'candle_data.dart';
 import 'chart_painter.dart';
 import 'chart_style.dart';
 import 'painter_params.dart';
+import 'marker_data.dart';
 
 class InteractiveChart extends StatefulWidget {
+  /// Symbol label
+  ///
+  final String symbolLabel;
+
+  /// Time agregate label
+  ///
+  final String timeAgrLabel;
+
+  ///
   /// The full list of [CandleData] to be used for this chart.
   ///
   /// It needs to have at least 3 data points. If data is sufficiently large,
@@ -17,6 +28,15 @@ class InteractiveChart extends StatefulWidget {
   /// first opened (configurable with [initialVisibleCandleCount] parameter),
   /// and allow users to freely zoom and pan however they like.
   final List<CandleData> candles;
+
+  /// List of markets to add on chart
+  ///
+  ///
+  final List<MarkerData> markers;
+
+  // The defualt starting candle. If not provided 0 (first).
+  //
+  final int startVisibleCandle;
 
   /// The default number of data points to be displayed when the chart is first
   /// opened. The default value is 90. If [CandleData] does not have enough data
@@ -52,6 +72,10 @@ class InteractiveChart extends StatefulWidget {
   /// ```
   final OverlayInfoGetter? overlayInfo;
 
+  /// The candle size in time (miliseconds), default 1 minute = 60 * 1000
+  ///
+  final int candleTimePeriod;
+
   /// An optional event, fired when the user clicks on a candlestick.
   final ValueChanged<CandleData>? onTap;
 
@@ -62,7 +86,12 @@ class InteractiveChart extends StatefulWidget {
 
   const InteractiveChart({
     Key? key,
+    this.symbolLabel = '',
+    this.timeAgrLabel = '',
     required this.candles,
+    this.markers = const [],
+    this.candleTimePeriod = 60 * 1000, // one minute default
+    this.startVisibleCandle = -90,
     this.initialVisibleCandleCount = 90,
     ChartStyle? style,
     this.timeLabel,
@@ -75,6 +104,10 @@ class InteractiveChart extends StatefulWidget {
             "InteractiveChart requires 3 or more CandleData"),
         assert(initialVisibleCandleCount >= 3,
             "initialVisibleCandleCount must be more 3 or more"),
+        assert(
+            (startVisibleCandle < candles.length &&
+                startVisibleCandle > -1 * candles.length),
+            "startVisibleCandle must less than last candle number"),
         super(key: key);
 
   @override
@@ -118,7 +151,12 @@ class _InteractiveChartState extends State<InteractiveChart> {
           final nextItem = widget.candles[end];
           candlesInRange.add(nextItem);
         }
-
+        // Select markers which overlap visible candless using
+        // timestamp as filter
+        List<MarkerData> markersInRange = List.from(widget.markers);
+        markersInRange.removeWhere((element) =>
+            (element.timestamp < candlesInRange.first.timestamp ||
+                element.timestamp > candlesInRange.last.timestamp));
         // If possible, find neighbouring trend line data,
         // so the chart could draw better-connected lines
         final leadingTrends = widget.candles.at(start - 1)?.trends;
@@ -150,6 +188,7 @@ class _InteractiveChartState extends State<InteractiveChart> {
             candlesInRange.map(highest).whereType<double>().reduce(max);
         final minPrice =
             candlesInRange.map(lowest).whereType<double>().reduce(min);
+
         final maxVol = candlesInRange
             .map((c) => c.volume)
             .whereType<double>()
@@ -162,7 +201,11 @@ class _InteractiveChartState extends State<InteractiveChart> {
         final child = TweenAnimationBuilder(
           tween: PainterParamsTween(
             end: PainterParams(
+              symbolLabel: widget.symbolLabel,
+              timeAgrLabel: widget.timeAgrLabel,
               candles: candlesInRange,
+              markers: markersInRange,
+              candleTimePeriod: widget.candleTimePeriod,
               style: widget.style,
               size: size,
               candleWidth: _candleWidth,
@@ -279,13 +322,21 @@ class _InteractiveChartState extends State<InteractiveChart> {
     } else {
       // Default zoom level. Defaults to a 90 day chart, but configurable.
       // If data is shorter, we use the whole range.
+      final start = widget.startVisibleCandle;
+
       final count = min(
         widget.candles.length,
         widget.initialVisibleCandleCount,
       );
       _candleWidth = w / count;
       // Default show the latest available data, e.g. the most recent 90 days.
-      _startOffset = (widget.candles.length - count) * _candleWidth;
+      // find offset to requested candle from beginig
+      if (start >= 0) {
+        _startOffset = start * _candleWidth;
+      } else {
+        // or from end
+        _startOffset = (widget.candles.length + start - count) * _candleWidth;
+      }
     }
     _prevChartWidth = w;
   }
@@ -323,6 +374,7 @@ class _InteractiveChartState extends State<InteractiveChart> {
 
   Map<String, String> defaultOverlayInfo(CandleData candle) {
     final date = intl.DateFormat.yMMMd()
+        .add_Hms()
         .format(DateTime.fromMillisecondsSinceEpoch(candle.timestamp));
     return {
       "Date": date,

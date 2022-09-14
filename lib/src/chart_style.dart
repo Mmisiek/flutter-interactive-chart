@@ -54,6 +54,11 @@ class ChartStyle {
   /// This appears when user clicks on the chart.
   final Color overlayBackgroundColor;
 
+  /// Enable minor grid
+  ///
+  /// This replaces 5 point grid with 12 spread by price not size of screen
+  final bool enableMinorGrid;
+
   const ChartStyle({
     this.volumeHeightFactor = 0.2,
     this.priceLabelWidth = 48.0,
@@ -77,5 +82,6 @@ class ChartStyle {
     this.priceGridLineColor = Colors.grey,
     this.selectionHighlightColor = const Color(0x33757575),
     this.overlayBackgroundColor = const Color(0xEE757575),
+    this.enableMinorGrid = false,
   });
 }

@@ -1,10 +1,13 @@
 import 'dart:math';
+//import 'dart:web_gl';
+import 'package:universal_io/io.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 
 import 'candle_data.dart';
 import 'painter_params.dart';
+import 'marker_data.dart';
 
 typedef TimeLabelGetter = String Function(int timestamp, int visibleDataCount);
 typedef PriceLabelGetter = String Function(double price);
@@ -27,6 +30,7 @@ class ChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     // Draw time labels (dates) & price labels
     _drawTimeLabels(canvas, params);
+    _drawSymbolAndTime(canvas, params);
     _drawPriceGridAndLabels(canvas, params);
 
     // Draw prices, volumes & trend line
@@ -41,6 +45,12 @@ class ChartPainter extends CustomPainter {
     for (int i = 0; i < params.candles.length; i++) {
       _drawSingleDay(canvas, params, i);
     }
+    for (int i = 0; i < params.candles.length; i++) {
+      _drawSingleDayMarkers(canvas, params, i, false);
+    }
+    for (int i = 0; i < params.candles.length; i++) {
+      _drawSingleDayMarkers(canvas, params, i, true);
+    }
     canvas.restore();
 
     // Draw tap highlight & overlay
@@ -51,6 +61,7 @@ class ChartPainter extends CustomPainter {
     }
   }
 
+  // TODO change it to fixed time intervals instead.
   void _drawTimeLabels(canvas, PainterParams params) {
     // We draw one time label per 90 pixels of screen width
     final lineCount = params.chartWidth ~/ 90;
@@ -80,10 +91,72 @@ class ChartPainter extends CustomPainter {
     }
   }
 
+  // TODO change it to fixed time intervals instead.
+  void _drawSymbolAndTime(canvas, PainterParams params) {
+    // We draw one time label per 90 pixels of screen width
+    final x = params.chartWidth / 2.0;
+    final y = params.chartHeight / 2.0;
+    final fontSizeLarge = params.chartHeight / 5.0;
+    final fontSizeSmall = params.chartHeight / 10.0;
+    final opacity = 0.1;
+
+    final symbolTp = TextPainter(
+      text: TextSpan(
+        text: params.symbolLabel,
+        style: TextStyle(
+          color: Colors.grey.withOpacity(opacity),
+          fontSize: fontSizeLarge,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    )
+      ..textDirection = TextDirection.ltr
+      ..layout();
+
+    // Center text
+    symbolTp.paint(
+      canvas,
+      Offset(x - symbolTp.width / 2.0, y - symbolTp.height / 2.0),
+    );
+
+    final timeTp = TextPainter(
+      text: TextSpan(
+        text: params.timeAgrLabel,
+        style: TextStyle(
+          color: Colors.grey.withOpacity(opacity),
+          fontSize: fontSizeSmall,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    )
+      ..textDirection = TextDirection.ltr
+      ..layout();
+    // Center text
+    timeTp.paint(
+      canvas,
+      Offset(x - timeTp.width / 2.0, y + symbolTp.height / 3.0),
+    );
+  }
+
+  // TO DO more price levels and locked by division
   void _drawPriceGridAndLabels(canvas, PainterParams params) {
-    [0.0, 0.25, 0.5, 0.75, 1.0]
-        .map((v) => ((params.maxPrice - params.minPrice) * v) + params.minPrice)
-        .forEach((y) {
+    List<double> gridPoints = [];
+    if (params.style.enableMinorGrid) {
+      gridPoints.clear();
+      double priceSpread = params.maxPrice - params.minPrice;
+      double priceStep = priceSpread / 10.0;
+      //if (priceStep > 1.0) {
+      for (int i = 0; i < 10; i++) {
+        gridPoints.add(params.minPrice + i * priceStep);
+      }
+    } else {
+      gridPoints = [0.0, 0.25, 0.5, 0.75, 1.0];
+      for (int i = 0; i < 5; i++) {
+        gridPoints.add(
+            ((params.maxPrice - params.minPrice) * i * 0.25) + params.minPrice);
+      }
+    }
+    gridPoints.forEach((y) {
       canvas.drawLine(
         Offset(0, params.fitPrice(y)),
         Offset(params.chartWidth, params.fitPrice(y)),
@@ -108,8 +181,21 @@ class ChartPainter extends CustomPainter {
     });
   }
 
+  // rotate canvas by angle
+  void rotate(
+      {required Canvas canvas,
+      required double cx,
+      required double cy,
+      required double angle}) {
+    canvas.translate(cx, cy);
+    canvas.rotate(angle);
+    canvas.translate(-cx, -cy);
+  }
+
   void _drawSingleDay(canvas, PainterParams params, int i) {
     final candle = params.candles[i];
+    final candleStartTimestamp = candle.timestamp;
+    final candleEndTimestamp = candleStartTimestamp + params.candleTimePeriod;
     final x = i * params.candleWidth;
     final thickWidth = max(params.candleWidth * 0.8, 0.8);
     final thinWidth = max(params.candleWidth * 0.2, 0.2);
@@ -191,6 +277,118 @@ class ChartPainter extends CustomPainter {
         }
       }
     }
+  }
+
+  void _drawSingleDayMarkers(
+      canvas, PainterParams params, int i, bool markersOrLines) {
+    final candle = params.candles[i];
+    final candleStartTimestamp = candle.timestamp;
+    final candleEndTimestamp = candleStartTimestamp + params.candleTimePeriod;
+    final x = i * params.candleWidth;
+    final thickWidth = max(params.candleWidth * 0.8, 0.8);
+    final thinWidth = max(params.candleWidth * 0.2, 0.2);
+
+    // Draw ovelaping markers which are in range of candles
+    final markers = params.markers.where((element) =>
+        element.timestamp >= candleStartTimestamp &&
+        element.timestamp <= candleEndTimestamp);
+
+    markers.forEach((marker) {
+      if (markers.length > 0) {
+        double y = params.fitPrice(marker.price ?? 0.0);
+        // first draw all lines then markers on top
+        if (markersOrLines) {
+          canvas.save();
+          // rotate to draw square diamonds
+          rotate(canvas: canvas, cx: x, cy: y, angle: 45 * pi / 180.0);
+          // TODO decide on number of candles
+          // draw circles so tardes are easier visible
+          if (params.candles.length > 120) {
+            canvas.drawCircle(
+              Offset(x, y),
+              params.candleWidth * 2,
+              Paint()..color = marker.color ?? Colors.transparent,
+            );
+          }
+          canvas.drawRect(
+            Rect.fromCenter(
+                center: Offset(x, y),
+                width: params.candleWidth * 1.3,
+                height: params.candleWidth * 1.3),
+            Paint()..color = marker.color ?? Colors.transparent,
+          );
+          canvas.drawRect(
+            Rect.fromCenter(
+                center: Offset(x, y),
+                width: params.candleWidth * 1.5,
+                height: params.candleWidth * 1.5),
+            Paint()
+              ..strokeWidth = thinWidth
+              ..style = PaintingStyle.stroke
+              ..color = Colors.black,
+          );
+          canvas.restore();
+          double price = marker.price ?? 0.0;
+          // TODO check number of candles
+          if (params.candles.length < 100) {
+            // show trade price inside diamond
+            final priceTp = TextPainter(
+              text: TextSpan(
+                text: getPriceLabel(price),
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                  fontSize: params.candleWidth / 2.0,
+                ),
+              ),
+            )
+              ..textDirection = TextDirection.ltr
+              ..layout();
+            priceTp.paint(
+                canvas,
+                Offset(
+                  x - priceTp.width / 2,
+                  y - priceTp.height / 2,
+                ));
+          }
+        } else {
+          // plot trade price line in specific color
+          // if requested by marker
+          if (marker.showPriceLine ?? false) {
+            canvas.drawLine(
+              Offset(x + params.candleWidth, y),
+              Offset(params.chartWidth, y),
+              Paint()
+                ..strokeWidth = max(thinWidth, 2.0)
+                ..color = marker.color ?? Colors.transparent,
+            );
+            canvas.drawLine(
+              Offset(0, y),
+              Offset(x - params.candleWidth, y),
+              Paint()
+                ..strokeWidth = max(thinWidth, 2.0)
+                ..color = marker.color ?? Colors.transparent,
+            );
+            if (params.candles.length > 100 && marker.price != null) {
+              final priceTp = TextPainter(
+                text: TextSpan(
+                  text: getPriceLabel(marker.price!),
+                  style: marker.labelStyle,
+                ),
+              )
+                ..textDirection = TextDirection.ltr
+                ..layout();
+              priceTp.paint(
+                  canvas,
+                  Offset(
+                    params.chartWidth - priceTp.width - 2,
+                    y - priceTp.height - 2,
+                  ));
+            } // show price on line
+          } // show price line
+        } // linesOrMarkes
+      } // markers > 0
+    });
   }
 
   void _drawTapHighlightAndOverlay(canvas, PainterParams params) {

@@ -3,10 +3,15 @@ import 'package:flutter/widgets.dart';
 
 import 'chart_style.dart';
 import 'candle_data.dart';
+import 'marker_data.dart';
 
 class PainterParams {
+  final String symbolLabel;
+  final String timeAgrLabel;
   final List<CandleData> candles;
+  final List<MarkerData> markers;
   final ChartStyle style;
+  final int candleTimePeriod;
   final Size size;
   final double candleWidth;
   final double startOffset;
@@ -22,7 +27,11 @@ class PainterParams {
   final List<double?>? trailingTrends;
 
   PainterParams({
+    required this.symbolLabel,
+    required this.timeAgrLabel,
     required this.candles,
+    required this.markers,
+    required this.candleTimePeriod,
     required this.style,
     required this.size,
     required this.candleWidth,
@@ -84,7 +93,11 @@ class PainterParams {
     double lerpField(double getField(PainterParams p)) =>
         lerpDouble(getField(a), getField(b), t)!;
     return PainterParams(
+      symbolLabel: b.symbolLabel,
+      timeAgrLabel: b.timeAgrLabel,
       candles: b.candles,
+      markers: b.markers,
+      candleTimePeriod: b.candleTimePeriod,
       style: b.style,
       size: b.size,
       candleWidth: b.candleWidth,
