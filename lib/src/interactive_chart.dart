@@ -84,6 +84,14 @@ class InteractiveChart extends StatefulWidget {
   /// This provides the width of a candlestick at the current zoom level.
   final ValueChanged<double>? onCandleResize;
 
+  /// Show markers price lines
+  ///
+  final bool? showMarkersPriceLines;
+
+  /// Show markers price lines
+  ///
+  final bool? showMarkersTimeLines;
+
   const InteractiveChart({
     Key? key,
     this.symbolLabel = '',
@@ -99,6 +107,8 @@ class InteractiveChart extends StatefulWidget {
     this.overlayInfo,
     this.onTap,
     this.onCandleResize,
+    this.showMarkersPriceLines = false,
+    this.showMarkersTimeLines = false,
   })  : this.style = style ?? const ChartStyle(),
         assert(candles.length >= 3,
             "InteractiveChart requires 3 or more CandleData"),
@@ -210,6 +220,8 @@ class _InteractiveChartState extends State<InteractiveChart> {
               size: size,
               candleWidth: _candleWidth,
               startOffset: _startOffset,
+              showMarkersPriceLines: widget.showMarkersPriceLines ?? false,
+              showMarketsTimeLines: widget.showMarkersTimeLines ?? false,
               maxPrice: maxPrice,
               minPrice: minPrice,
               maxVol: maxVol,

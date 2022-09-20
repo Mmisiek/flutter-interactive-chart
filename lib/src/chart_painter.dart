@@ -4,6 +4,7 @@ import 'package:universal_io/io.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
+import 'package:intl/intl.dart' as intl;
 
 import 'candle_data.dart';
 import 'painter_params.dart';
@@ -26,13 +27,34 @@ class ChartPainter extends CustomPainter {
     required this.getOverlayInfo,
   });
 
+  // to be imporved by screen size ?
+  bool isMobile() {
+    return Platform.isAndroid || Platform.isIOS;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
-    // Draw time labels (dates) & price labels
-    _drawTimeLabels(canvas, params);
+    bool skipTimeTicks = false;
+    bool skipPriceTicks = false;
+    if (params.showMarketsTimeLines) {
+      for (int i = 0; i < params.candles.length; i++) {
+        skipTimeTicks |=
+            _drawSingleDayMarkers(canvas, params, i, MarkerElement.timeLabel);
+      }
+    }
+    if (!skipTimeTicks) {
+      // Draw time labels (dates) & price labels only if marker are not shown
+      _drawTimeLabels(canvas, params);
+    }
     _drawSymbolAndTime(canvas, params);
-    _drawPriceGridAndLabels(canvas, params);
-
+    if (params.showMarkersPriceLines) {
+      // draw line prices on the side
+      for (int i = 0; i < params.candles.length; i++) {
+        skipPriceTicks |=
+            _drawSingleDayMarkers(canvas, params, i, MarkerElement.priceLabel);
+      }
+    }
+    _drawPriceGridAndLabels(canvas, params, skipPriceTicks);
     // Draw prices, volumes & trend line
     canvas.save();
     canvas.clipRect(Offset.zero & Size(params.chartWidth, params.chartHeight));
@@ -45,12 +67,20 @@ class ChartPainter extends CustomPainter {
     for (int i = 0; i < params.candles.length; i++) {
       _drawSingleDay(canvas, params, i);
     }
-    for (int i = 0; i < params.candles.length; i++) {
-      _drawSingleDayMarkers(canvas, params, i, false);
+    if (params.showMarkersPriceLines) {
+      for (int i = 0; i < params.candles.length; i++) {
+        _drawSingleDayMarkers(canvas, params, i, MarkerElement.priceLine);
+      }
+    }
+    if (params.showMarketsTimeLines) {
+      for (int i = 0; i < params.candles.length; i++) {
+        _drawSingleDayMarkers(canvas, params, i, MarkerElement.timeLine);
+      }
     }
     for (int i = 0; i < params.candles.length; i++) {
-      _drawSingleDayMarkers(canvas, params, i, true);
+      _drawSingleDayMarkers(canvas, params, i, MarkerElement.marker);
     }
+
     canvas.restore();
 
     // Draw tap highlight & overlay
@@ -139,7 +169,8 @@ class ChartPainter extends CustomPainter {
   }
 
   // TO DO more price levels and locked by division
-  void _drawPriceGridAndLabels(canvas, PainterParams params) {
+  void _drawPriceGridAndLabels(
+      canvas, PainterParams params, bool skipPriceTicks) {
     List<double> gridPoints = [];
     if (params.style.enableMinorGrid) {
       gridPoints.clear();
@@ -164,20 +195,22 @@ class ChartPainter extends CustomPainter {
           ..strokeWidth = 0.5
           ..color = params.style.priceGridLineColor,
       );
-      final priceTp = TextPainter(
-        text: TextSpan(
-          text: getPriceLabel(y),
-          style: params.style.priceLabelStyle,
-        ),
-      )
-        ..textDirection = TextDirection.ltr
-        ..layout();
-      priceTp.paint(
-          canvas,
-          Offset(
-            params.chartWidth + 4,
-            params.fitPrice(y) - priceTp.height / 2,
-          ));
+      if (!skipPriceTicks) {
+        final priceTp = TextPainter(
+          text: TextSpan(
+            text: getPriceLabel(y),
+            style: params.style.priceLabelStyle,
+          ),
+        )
+          ..textDirection = TextDirection.ltr
+          ..layout();
+        priceTp.paint(
+            canvas,
+            Offset(
+              params.chartWidth + 4,
+              params.fitPrice(y) - priceTp.height / 2,
+            ));
+      }
     });
   }
 
@@ -279,101 +312,114 @@ class ChartPainter extends CustomPainter {
     }
   }
 
-  void _drawSingleDayMarkers(
-      canvas, PainterParams params, int i, bool markersOrLines) {
+  bool _drawSingleDayMarkers(
+      canvas, PainterParams params, int i, MarkerElement element) {
     final candle = params.candles[i];
     final candleStartTimestamp = candle.timestamp;
     final candleEndTimestamp = candleStartTimestamp + params.candleTimePeriod;
     final x = i * params.candleWidth;
     final thickWidth = max(params.candleWidth * 0.8, 0.8);
     final thinWidth = max(params.candleWidth * 0.2, 0.2);
-
+    final extraThinWidth = max(params.candleWidth * 0.1, 0.1);
+    bool painted = false;
     // Draw ovelaping markers which are in range of candles
     final markers = params.markers.where((element) =>
         element.timestamp >= candleStartTimestamp &&
         element.timestamp <= candleEndTimestamp);
-
+    // when to show prices inside marks and loose side price
+    int _showPriceCandlesLimit = isMobile() ? 20 : 40;
+    int _showCircleCandleLimit = isMobile() ? 80 : 120;
+    double _markerCircleScale = isMobile() ? 3.0 : 2.0;
+    int visibeMarkersCount = markers.length;
     markers.forEach((marker) {
-      if (markers.length > 0) {
-        double y = params.fitPrice(marker.price ?? 0.0);
-        // first draw all lines then markers on top
-        if (markersOrLines) {
-          canvas.save();
-          // rotate to draw square diamonds
-          rotate(canvas: canvas, cx: x, cy: y, angle: 45 * pi / 180.0);
-          // TODO decide on number of candles
-          // draw circles so tardes are easier visible
-          if (params.candles.length > 120) {
-            canvas.drawCircle(
-              Offset(x, y),
-              params.candleWidth * 2,
+      double y = params.fitPrice(marker.price ?? 0.0);
+      // first draw all lines then markers on top
+      switch (element) {
+        case MarkerElement.marker:
+          {
+            canvas.save();
+            // rotate to draw square diamonds
+            rotate(canvas: canvas, cx: x, cy: y, angle: 45 * pi / 180.0);
+            // TODO decide on number of candles
+            // draw circles so tardes are easier visible
+            if (params.candles.length > _showCircleCandleLimit) {
+              canvas.drawCircle(
+                Offset(x, y),
+                params.candleWidth * _markerCircleScale,
+                Paint()..color = marker.color ?? Colors.transparent,
+              );
+            }
+            canvas.drawRect(
+              Rect.fromCenter(
+                  center: Offset(x, y),
+                  width: params.candleWidth * 1.1,
+                  height: params.candleWidth * 1.1),
               Paint()..color = marker.color ?? Colors.transparent,
             );
-          }
-          canvas.drawRect(
-            Rect.fromCenter(
-                center: Offset(x, y),
-                width: params.candleWidth * 1.3,
-                height: params.candleWidth * 1.3),
-            Paint()..color = marker.color ?? Colors.transparent,
-          );
-          canvas.drawRect(
-            Rect.fromCenter(
-                center: Offset(x, y),
-                width: params.candleWidth * 1.5,
-                height: params.candleWidth * 1.5),
-            Paint()
-              ..strokeWidth = thinWidth
-              ..style = PaintingStyle.stroke
-              ..color = Colors.black,
-          );
-          canvas.restore();
-          double price = marker.price ?? 0.0;
-          // TODO check number of candles
-          if (params.candles.length < 100) {
-            // show trade price inside diamond
-            final priceTp = TextPainter(
-              text: TextSpan(
-                text: getPriceLabel(price),
-                style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: params.candleWidth / 2.0,
+            canvas.drawRect(
+              Rect.fromCenter(
+                  center: Offset(x, y),
+                  width: params.candleWidth * 1.2,
+                  height: params.candleWidth * 1.2),
+              Paint()
+                ..strokeWidth = extraThinWidth
+                ..style = PaintingStyle.stroke
+                ..color = Colors.black,
+            );
+            canvas.restore();
+
+            double price = marker.price ?? 0.0;
+            // TODO check number of candles
+            if (params.candles.length < _showPriceCandlesLimit) {
+              // show trade price inside diamond
+              final priceTp = TextPainter(
+                text: TextSpan(
+                  text: getPriceLabel(price),
+                  style: TextStyle(
+                    color: marker.markerPriceColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: params.candleWidth / 2.0,
+                  ),
                 ),
-              ),
-            )
-              ..textDirection = TextDirection.ltr
-              ..layout();
-            priceTp.paint(
-                canvas,
-                Offset(
-                  x - priceTp.width / 2,
-                  y - priceTp.height / 2,
-                ));
+              ) // TextStyle
+                ..textDirection = TextDirection.ltr
+                ..layout();
+              priceTp.paint(
+                  canvas,
+                  Offset(
+                    x - priceTp.width / 2,
+                    y - priceTp.height / 2,
+                  ));
+              painted = true;
+            }
           }
-        } else {
-          // plot trade price line in specific color
-          // if requested by marker
-          if (marker.showPriceLine ?? false) {
-            canvas.drawLine(
-              Offset(x + params.candleWidth, y),
-              Offset(params.chartWidth, y),
-              Paint()
-                ..strokeWidth = max(thinWidth, 2.0)
-                ..color = marker.color ?? Colors.transparent,
-            );
-            canvas.drawLine(
-              Offset(0, y),
-              Offset(x - params.candleWidth, y),
-              Paint()
-                ..strokeWidth = max(thinWidth, 2.0)
-                ..color = marker.color ?? Colors.transparent,
-            );
-            if (params.candles.length > 100 && marker.price != null) {
+          break;
+
+        case MarkerElement.priceLine:
+          {
+            // plot trade price line in specific color
+            // if requested by marker
+            if (marker.showPriceLine ?? false) {
+              canvas.drawLine(
+                Offset(-1, y),
+                Offset(params.chartWidth, y),
+                Paint()
+                  ..strokeWidth = max(thinWidth, 2.0)
+                  ..color = marker.priceLineStyle?.color ?? Colors.transparent,
+              );
+              painted = true;
+            }
+          }
+          break;
+
+        case MarkerElement.priceLabel:
+          {
+            if (params.candles.length > _showPriceCandlesLimit &&
+                marker.price != null) {
               final priceTp = TextPainter(
                 text: TextSpan(
                   text: getPriceLabel(marker.price!),
-                  style: marker.labelStyle,
+                  style: marker.priceLineStyle,
                 ),
               )
                 ..textDirection = TextDirection.ltr
@@ -381,14 +427,55 @@ class ChartPainter extends CustomPainter {
               priceTp.paint(
                   canvas,
                   Offset(
-                    params.chartWidth - priceTp.width - 2,
-                    y - priceTp.height - 2,
+                    params.chartWidth + 2,
+                    y - priceTp.height / 2,
                   ));
-            } // show price on line
-          } // show price line
-        } // linesOrMarkes
-      } // markers > 0
+              painted = true;
+            }
+          }
+          break;
+        case MarkerElement.timeLine:
+          {
+            // plot trade price line in specific color
+            // if requested by marker
+            if (marker.showMarkerTimeLine ?? false) {
+              canvas.drawLine(
+                Offset(x, y),
+                Offset(x, params.chartHeight),
+                Paint()
+                  ..strokeWidth = max(thinWidth, 2.0)
+                  ..color = marker.priceLineStyle?.color ?? Colors.transparent,
+              );
+              painted = true;
+            }
+          }
+          break;
+        case MarkerElement.timeLabel:
+          {
+            if (marker.showMarkerTimeLine ?? false) {
+              final timeTp = TextPainter(
+                text: TextSpan(
+                  text: intl.DateFormat('HH:mm').format(
+                      DateTime.fromMillisecondsSinceEpoch(marker.timestamp)),
+                  style: TextStyle(color: marker.color, fontSize: 17.0),
+                ),
+              )
+                ..textDirection = TextDirection.ltr
+                ..layout();
+              final topPadding = params.style.timeLabelHeight - timeTp.height;
+              timeTp.paint(
+                  canvas,
+                  Offset(
+                    x - timeTp.width / 2,
+                    params.chartHeight + topPadding,
+                  ));
+              painted = true;
+            }
+          }
+          break;
+      }
     });
+    return painted;
   }
 
   void _drawTapHighlightAndOverlay(canvas, PainterParams params) {

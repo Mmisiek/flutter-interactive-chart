@@ -16,6 +16,9 @@ class PainterParams {
   final double candleWidth;
   final double startOffset;
 
+  final bool showMarkersPriceLines;
+  final bool showMarketsTimeLines;
+
   final double maxPrice;
   final double minPrice;
   final double maxVol;
@@ -36,6 +39,8 @@ class PainterParams {
     required this.size,
     required this.candleWidth,
     required this.startOffset,
+    required this.showMarkersPriceLines,
+    required this.showMarketsTimeLines,
     required this.maxPrice,
     required this.minPrice,
     required this.maxVol,
@@ -102,6 +107,8 @@ class PainterParams {
       size: b.size,
       candleWidth: b.candleWidth,
       startOffset: b.startOffset,
+      showMarkersPriceLines: b.showMarkersPriceLines,
+      showMarketsTimeLines: b.showMarketsTimeLines,
       maxPrice: lerpField((p) => p.maxPrice),
       minPrice: lerpField((p) => p.minPrice),
       maxVol: lerpField((p) => p.maxVol),
