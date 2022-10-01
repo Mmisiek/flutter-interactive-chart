@@ -22,6 +22,7 @@ class ChartStyle {
 
   /// The style of price labels (on the right of the chart).
   final TextStyle priceLabelStyle;
+  final TextStyle summaryLabelStyle;
 
   /// The style of overlay texts. These texts are drawn on top of the
   /// background color specified in [overlayBackgroundColor].
@@ -42,6 +43,8 @@ class ChartStyle {
   /// be chosen in the order of appearance in this list. If this list is shorter
   /// than the number of trend lines, a default blue paint will be applied.
   final List<Paint> trendLineStyles;
+
+  final List<Paint> indicatorLineStyles;
 
   /// The color of the price grid line.
   final Color priceGridLineColor;
@@ -71,6 +74,10 @@ class ChartStyle {
       fontSize: 12,
       color: Colors.grey,
     ),
+    this.summaryLabelStyle = const TextStyle(
+      fontSize: 12,
+      color: Colors.black,
+    ),
     this.overlayTextStyle = const TextStyle(
       fontSize: 16,
       color: Colors.white,
@@ -79,6 +86,7 @@ class ChartStyle {
     this.priceLossColor = Colors.red,
     this.volumeColor = Colors.grey,
     this.trendLineStyles = const [],
+    this.indicatorLineStyles = const [],
     this.priceGridLineColor = Colors.grey,
     this.selectionHighlightColor = const Color(0x33757575),
     this.overlayBackgroundColor = const Color(0xEE757575),

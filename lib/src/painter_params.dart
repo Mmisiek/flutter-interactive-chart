@@ -9,6 +9,7 @@ class PainterParams {
   final String symbolLabel;
   final String timeAgrLabel;
   final List<CandleData> candles;
+  final List<double> indicatorStartList;
   final List<MarkerData> markers;
   final ChartStyle style;
   final int candleTimePeriod;
@@ -18,6 +19,7 @@ class PainterParams {
 
   final bool showMarkersPriceLines;
   final bool showMarketsTimeLines;
+  final bool showVolume;
 
   final double maxPrice;
   final double minPrice;
@@ -33,6 +35,7 @@ class PainterParams {
     required this.symbolLabel,
     required this.timeAgrLabel,
     required this.candles,
+    required this.indicatorStartList,
     required this.markers,
     required this.candleTimePeriod,
     required this.style,
@@ -41,6 +44,7 @@ class PainterParams {
     required this.startOffset,
     required this.showMarkersPriceLines,
     required this.showMarketsTimeLines,
+    required this.showVolume,
     required this.maxPrice,
     required this.minPrice,
     required this.maxVol,
@@ -68,7 +72,7 @@ class PainterParams {
   }
 
   double fitPrice(double y) =>
-      priceHeight * (maxPrice - y) / (maxPrice - minPrice);
+      priceHeight * (maxPrice - y) / (maxPrice - minPrice) + candleWidth;
 
   double fitVolume(double y) {
     final gap = 12; // the gap between price bars and volume bars
@@ -85,6 +89,7 @@ class PainterParams {
         }
         return true;
       }());
+      // if they are both set to 0 just dot show it
       // Since they are equal, we just draw all volume bars as half height.
       return priceHeight + volumeHeight / 2;
     }
@@ -94,6 +99,17 @@ class PainterParams {
     return volumeHeight - vol + priceHeight - baseAmount;
   }
 
+  double fitInd(double y) {
+    final gap = 12; // the gap between price bars and volume bars
+    final maxInd = 1;
+    final minInd = 0;
+    final baseAmount = 0;
+
+    final volGridSize = (volumeHeight - baseAmount - gap) / (maxInd - minInd);
+    final ind = (y - minInd) * volGridSize;
+    return volumeHeight - ind + priceHeight - baseAmount;
+  }
+
   static PainterParams lerp(PainterParams a, PainterParams b, double t) {
     double lerpField(double getField(PainterParams p)) =>
         lerpDouble(getField(a), getField(b), t)!;
@@ -101,6 +117,7 @@ class PainterParams {
       symbolLabel: b.symbolLabel,
       timeAgrLabel: b.timeAgrLabel,
       candles: b.candles,
+      indicatorStartList: b.indicatorStartList,
       markers: b.markers,
       candleTimePeriod: b.candleTimePeriod,
       style: b.style,
@@ -109,6 +126,7 @@ class PainterParams {
       startOffset: b.startOffset,
       showMarkersPriceLines: b.showMarkersPriceLines,
       showMarketsTimeLines: b.showMarketsTimeLines,
+      showVolume: b.showVolume,
       maxPrice: lerpField((p) => p.maxPrice),
       minPrice: lerpField((p) => p.minPrice),
       maxVol: lerpField((p) => p.maxVol),

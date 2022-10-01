@@ -36,6 +36,11 @@ class CandleData {
   /// are changed. Otherwise the UI might not be updated.
   List<double?> trends;
 
+  /// Data holder for indicators to overlap with volume (lower chart place)
+  ///
+  ///
+  List<double?> indicators;
+
   CandleData({
     required this.timestamp,
     required this.open,
@@ -44,7 +49,9 @@ class CandleData {
     this.high,
     this.low,
     List<double?>? trends,
-  }) : this.trends = List.unmodifiable(trends ?? []);
+    List<double?>? indicators,
+  })  : this.trends = List.unmodifiable(trends ?? []),
+        this.indicators = List.unmodifiable(indicators ?? []);
 
   static List<double?> computeMA(List<CandleData> data, [int period = 7]) {
     // If data is not at least twice as long as the period, return nulls.
@@ -68,6 +75,29 @@ class CandleData {
         result.add(null);
       }
     }
+    return result;
+  }
+
+  static List<double?> computePRI(
+      List<CandleData> data, List<CandleData> benchmark) {
+    final List<double?> result = [];
+    // find ovelapping time marks
+    int j = 0;
+    for (int i = 0; i < data.length; i++) {
+      while (benchmark[j].timestamp < data[i].timestamp) {
+        j++;
+      }
+      if (benchmark[j].timestamp == data[i].timestamp) {
+        if (data[i].close != null && benchmark[j].close != null) {
+          result.add(data[i].close! / benchmark[j].close!);
+        } else {
+          result.add(null);
+        }
+      } else {
+        result.add(null);
+      }
+    }
+
     return result;
   }
 

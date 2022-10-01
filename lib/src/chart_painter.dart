@@ -36,6 +36,19 @@ class ChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     bool skipTimeTicks = false;
     bool skipPriceTicks = false;
+    bool drawCandlesPrices = true;
+    if (params.candleTimePeriod < 86400000) {
+      canvas.save();
+      canvas.translate(params.xShift, 0);
+
+      _drawTradeDaysGridlines(canvas, params);
+      canvas.restore();
+    }
+    // draw min max prices for visible period
+    // to do make it option.
+    if (drawCandlesPrices) {
+      _drawChartHeader(canvas, params);
+    }
     if (params.showMarketsTimeLines) {
       for (int i = 0; i < params.candles.length; i++) {
         skipTimeTicks |=
@@ -89,6 +102,41 @@ class ChartPainter extends CustomPainter {
         _drawTapHighlightAndOverlay(canvas, params);
       }
     }
+  }
+
+  // paint summary of chart on top
+  void _drawChartHeader(canvas, PainterParams params) {
+    double open = params.candles.first.open ?? 0.0;
+    double close = params.candles.last.close ?? 0.0;
+    double high = open, low = close;
+    for (int i = 0; i < params.candles.length; i++) {
+      if ((params.candles[i].high ?? 0.0) > high) {
+        high = params.candles[i].high ?? 0.0;
+      }
+      if ((params.candles[i].low ?? 0.0) < low) {
+        low = params.candles[i].low ?? 0.0;
+      }
+    }
+    String header = 'Open:' +
+        open.toStringAsFixed(2) +
+        ' close:' +
+        close.toStringAsFixed(2) +
+        ' high:' +
+        high.toStringAsFixed(2) +
+        ' low:' +
+        low.toStringAsFixed(2);
+    final headerTp = TextPainter(
+      text: TextSpan(
+        text: header,
+        style: params.style.summaryLabelStyle,
+      ),
+    )
+      ..textDirection = TextDirection.ltr
+      ..layout();
+    headerTp.paint(
+      canvas,
+      Offset(params.chartWidth / 2 - headerTp.width / 2, headerTp.height / 2),
+    );
   }
 
   // TODO change it to fixed time intervals instead.
@@ -166,6 +214,22 @@ class ChartPainter extends CustomPainter {
       canvas,
       Offset(x - timeTp.width / 2.0, y + symbolTp.height / 3.0),
     );
+    // draw indicator single line if defined
+    for (int j = 0; j < params.indicatorStartList.length; j++) {
+      final indicatorLinePaint = params.style.indicatorLineStyles.at(j) ??
+          (Paint()
+            ..strokeWidth = 2.0
+            ..strokeCap = StrokeCap.round
+            ..color = params.style.priceLossColor);
+      final pt = params.indicatorStartList[j]; // current data point
+      if (pt != null) {
+        canvas.drawLine(
+          Offset(0, params.fitInd(pt)),
+          Offset(params.chartWidth, params.fitInd(pt)),
+          indicatorLinePaint,
+        );
+      }
+    }
   }
 
   // TO DO more price levels and locked by division
@@ -214,6 +278,124 @@ class ChartPainter extends CustomPainter {
     });
   }
 
+  void _drawTradeDaysGridlines(canvas, PainterParams params) {
+    List<double> gridShadePoints = [];
+    final candle0 = params.candles[0];
+    int timestamp0 = candle0.timestamp;
+    int i = 0;
+    bool lastPointEndSession = false;
+    bool lastPointStartSession = false;
+    while (i < params.candles.length) {
+      int timestamp = params.candles[i].timestamp;
+      DateTime dateTimeStart = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      timestamp = params.candles[i].timestamp + params.candleTimePeriod;
+      DateTime dateTimeEnd = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      // artifically adjusted 1 second
+      DateTime sessionStart = DateTime(
+          dateTimeStart.year, dateTimeStart.month, dateTimeStart.day, 9, 30, 1);
+      DateTime sessionEnd = DateTime(
+          dateTimeEnd.year, dateTimeEnd.month, dateTimeEnd.day, 15, 59, 59);
+      if (dateTimeStart.isBefore(sessionStart) &&
+          dateTimeEnd.isAfter(sessionStart)) {
+        double dx = sessionStart.difference(dateTimeStart).inMilliseconds /
+            params.candleTimePeriod;
+        if (gridShadePoints.isEmpty) {
+          gridShadePoints.add(-0.1);
+        }
+        if (lastPointStartSession) {
+          // close previous one before opening new
+          //open previous before closing
+          gridShadePoints.add(gridShadePoints.last + 0.0001);
+        }
+        gridShadePoints.add(i + dx);
+        lastPointEndSession = false;
+        lastPointStartSession = true;
+      }
+      if (dateTimeStart.isBefore(sessionEnd) &&
+          dateTimeEnd.isAfter(sessionEnd)) {
+        double dx = sessionEnd.difference(dateTimeStart).inMilliseconds /
+            params.candleTimePeriod;
+        if (lastPointEndSession) {
+          //open previous before closing
+          gridShadePoints.add(gridShadePoints.last + 0.0001);
+        }
+        gridShadePoints.add(i + dx);
+        lastPointEndSession = true;
+        lastPointStartSession = false;
+      }
+      i++;
+    }
+    if (lastPointEndSession) {
+      // add end of screen
+      gridShadePoints.add(params.candles.length + 0.1);
+    }
+    // if the all are in off day trade
+    if (gridShadePoints.length == 0) {
+      int timestamp = params.candles.first.timestamp;
+      DateTime dateTimeStart = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      timestamp = params.candles.last.timestamp + params.candleTimePeriod;
+      DateTime dateTimeEnd = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      DateTime sessionStart = DateTime(
+          dateTimeStart.year, dateTimeStart.month, dateTimeStart.day, 9, 30, 1);
+      DateTime sessionEnd = DateTime(
+          dateTimeEnd.year, dateTimeEnd.month, dateTimeEnd.day, 15, 59, 59);
+      if (dateTimeStart.isAfter(sessionEnd) &&
+          dateTimeEnd.isBefore(sessionStart)) {
+        gridShadePoints.add(0);
+        gridShadePoints.add(params.chartWidth / params.candleWidth);
+      }
+    }
+    /*
+    if ((gridShadePoints.length % 2) == 1) {
+      print("Error: " + gridShadePoints.toString());
+    } else {
+      print("Good: " + gridShadePoints.toString());
+    }
+    */
+    if (gridShadePoints.length % 2 == 0) {
+      for (int i = 0; i < gridShadePoints.length; i += 2) {
+        if (((gridShadePoints[i + 1] * params.candleWidth) -
+                (gridShadePoints[i] * params.candleWidth)) <
+            1) {
+          /*
+          print("Line from " +
+              ((gridShadePoints[i] * params.candleWidth).round() + 0.0)
+                  .toString() +
+              " to " +
+              ((gridShadePoints[i] * params.candleWidth).round() + 0.0)
+                  .toString());*/
+          canvas.drawLine(
+              Offset(
+                  (gridShadePoints[i] * params.candleWidth -
+                              params.candleWidth / 2)
+                          .round() -
+                      0.0,
+                  0),
+              Offset(
+                  (gridShadePoints[i] * params.candleWidth -
+                              params.candleWidth / 2)
+                          .round() -
+                      0.0,
+                  params.chartHeight),
+              Paint()
+                ..color = Colors.grey.shade200
+                ..strokeWidth = 5.0
+                ..style = PaintingStyle.stroke);
+        } else {
+          canvas.drawRect(
+              Rect.fromLTRB(
+                  gridShadePoints[i] * params.candleWidth -
+                      params.candleWidth / 2,
+                  0,
+                  gridShadePoints[i + 1] * params.candleWidth -
+                      params.candleWidth / 2,
+                  params.chartHeight),
+              Paint()..color = Colors.grey.shade200);
+        }
+      }
+    }
+  }
+
   // rotate canvas by angle
   void rotate(
       {required Canvas canvas,
@@ -231,43 +413,73 @@ class ChartPainter extends CustomPainter {
     final candleEndTimestamp = candleStartTimestamp + params.candleTimePeriod;
     final x = i * params.candleWidth;
     final thickWidth = max(params.candleWidth * 0.8, 0.8);
-    final thinWidth = max(params.candleWidth * 0.2, 0.2);
+    final thinWidth = max(params.candleWidth * 0.1, 0.1);
+    final volumeWidth = max(params.candleWidth * 0.9, 0.9);
+    //print(
+    //    'candle width ${params.candleWidth} thick $thickWidth thin $thinWidth');
     // Draw price bar
     final open = candle.open;
     final close = candle.close;
     final high = candle.high;
     final low = candle.low;
     if (open != null && close != null) {
-      final color = open > close
-          ? params.style.priceLossColor
-          : params.style.priceGainColor;
-      canvas.drawLine(
-        Offset(x, params.fitPrice(open)),
-        Offset(x, params.fitPrice(close)),
-        Paint()
-          ..strokeWidth = thickWidth
-          ..color = color,
-      );
+      final color = open == close
+          ? params.style.volumeColor
+          : (open > close
+              ? params.style.priceLossColor
+              : params.style.priceGainColor);
+
       if (high != null && low != null) {
         canvas.drawLine(
           Offset(x, params.fitPrice(high)),
           Offset(x, params.fitPrice(low)),
           Paint()
             ..strokeWidth = thinWidth
+            ..style = PaintingStyle.stroke
+            ..color = color,
+        );
+      }
+      if (open == close) {
+        canvas.drawLine(
+          Offset(x - thickWidth / 2, params.fitPrice(open)),
+          Offset(x + thickWidth / 2, params.fitPrice(close)),
+          Paint()
+            ..strokeWidth = thinWidth
+            ..style = PaintingStyle.stroke
+            ..color = color,
+        );
+      } else {
+        canvas.drawLine(
+          Offset(x, params.fitPrice(open)),
+          Offset(x, params.fitPrice(close)),
+          Paint()
+            ..strokeWidth = thickWidth
+            ..style = PaintingStyle.stroke
             ..color = color,
         );
       }
     }
-    // Draw volume bar
-    final volume = candle.volume;
-    if (volume != null) {
-      canvas.drawLine(
-        Offset(x, params.chartHeight),
-        Offset(x, params.fitVolume(volume)),
-        Paint()
-          ..strokeWidth = thickWidth
-          ..color = params.style.volumeColor,
-      );
+    if (params.showVolume) {
+      // Draw volume bar
+      final volume = candle.volume;
+      if (volume != null) {
+        Color color = params.style.volumeColor.withAlpha(200);
+        if (open != null && close != null) {
+          color = open == close
+              ? params.style.volumeColor
+              : (open > close
+                  ? params.style.priceLossColor.withAlpha(200)
+                  : params.style.priceGainColor.withAlpha(200));
+        }
+        canvas.drawLine(
+          Offset(x, params.chartHeight),
+          Offset(x, params.fitVolume(volume)),
+          Paint()
+            ..strokeWidth = volumeWidth
+            ..style = PaintingStyle.stroke
+            ..color = color,
+        );
+      }
     }
     // Draw trend line
     for (int j = 0; j < candle.trends.length; j++) {
@@ -310,6 +522,23 @@ class ChartPainter extends CustomPainter {
         }
       }
     }
+    // Draw PRI
+    for (int j = 0; j < candle.indicators.length; j++) {
+      final indicatorLinePaint = params.style.indicatorLineStyles.at(j) ??
+          (Paint()
+            ..strokeWidth = 2.0
+            ..strokeCap = StrokeCap.round
+            ..color = params.style.priceGainColor);
+      final pt = candle.indicators.at(j); // current data point
+      final prevPt = params.candles.at(i - 1)?.indicators.at(j);
+      if (pt != null && prevPt != null) {
+        canvas.drawLine(
+          Offset(x - params.candleWidth, params.fitInd(prevPt)),
+          Offset(x, params.fitInd(pt)),
+          indicatorLinePaint,
+        );
+      }
+    }
   }
 
   bool _drawSingleDayMarkers(
@@ -322,17 +551,28 @@ class ChartPainter extends CustomPainter {
     final thinWidth = max(params.candleWidth * 0.2, 0.2);
     final extraThinWidth = max(params.candleWidth * 0.1, 0.1);
     bool painted = false;
+    bool priceProblem = false;
     // Draw ovelaping markers which are in range of candles
     final markers = params.markers.where((element) =>
         element.timestamp >= candleStartTimestamp &&
-        element.timestamp <= candleEndTimestamp);
+        element.timestamp < candleEndTimestamp);
     // when to show prices inside marks and loose side price
-    int _showPriceCandlesLimit = isMobile() ? 20 : 40;
+    int _showPriceCandlesLimit = isMobile() ? 15 : 30;
     int _showCircleCandleLimit = isMobile() ? 80 : 120;
     double _markerCircleScale = isMobile() ? 3.0 : 2.0;
     int visibeMarkersCount = markers.length;
     markers.forEach((marker) {
       double y = params.fitPrice(marker.price ?? 0.0);
+      // check that y is not lower than low on candle,
+      // if yes bring it to 0 level
+      double yLow = params.fitPrice(candle.low ?? 0.0);
+      if (y > (yLow + params.candleWidth)) {
+        // show it on the borrom of chart
+        if (y > params.chartHeight) {
+          y = params.chartHeight - params.candleWidth;
+        }
+        priceProblem = true;
+      }
       // first draw all lines then markers on top
       switch (element) {
         case MarkerElement.marker:
@@ -342,25 +582,32 @@ class ChartPainter extends CustomPainter {
             rotate(canvas: canvas, cx: x, cy: y, angle: 45 * pi / 180.0);
             // TODO decide on number of candles
             // draw circles so tardes are easier visible
-            if (params.candles.length > _showCircleCandleLimit) {
+            /*if (params.candles.length > _showCircleCandleLimit) {
               canvas.drawCircle(
                 Offset(x, y),
                 params.candleWidth * _markerCircleScale,
-                Paint()..color = marker.color ?? Colors.transparent,
+                Paint()
+                  ..color = priceProblem
+                      ? Colors.orange
+                      : (marker.color ?? Colors.transparent),
               );
-            }
+            }*/
             canvas.drawRect(
               Rect.fromCenter(
                   center: Offset(x, y),
-                  width: params.candleWidth * 1.1,
-                  height: params.candleWidth * 1.1),
-              Paint()..color = marker.color ?? Colors.transparent,
+                  width: params.candleWidth * 0.7,
+                  height: params.candleWidth * 0.7),
+              Paint()
+                ..color = priceProblem
+                    ? Colors.orange
+                    : (marker.color ?? Colors.transparent)
+                ..style = PaintingStyle.fill,
             );
             canvas.drawRect(
               Rect.fromCenter(
                   center: Offset(x, y),
-                  width: params.candleWidth * 1.2,
-                  height: params.candleWidth * 1.2),
+                  width: params.candleWidth * 0.8,
+                  height: params.candleWidth * 0.8),
               Paint()
                 ..strokeWidth = extraThinWidth
                 ..style = PaintingStyle.stroke
@@ -370,7 +617,7 @@ class ChartPainter extends CustomPainter {
 
             double price = marker.price ?? 0.0;
             // TODO check number of candles
-            if (params.candles.length < _showPriceCandlesLimit) {
+            if (params.candles.length <= _showPriceCandlesLimit) {
               // show trade price inside diamond
               final priceTp = TextPainter(
                 text: TextSpan(
@@ -378,7 +625,7 @@ class ChartPainter extends CustomPainter {
                   style: TextStyle(
                     color: marker.markerPriceColor,
                     fontWeight: FontWeight.bold,
-                    fontSize: params.candleWidth / 2.0,
+                    fontSize: params.candleWidth / 3.0,
                   ),
                 ),
               ) // TextStyle
@@ -455,20 +702,33 @@ class ChartPainter extends CustomPainter {
             if (marker.showMarkerTimeLine ?? false) {
               final timeTp = TextPainter(
                 text: TextSpan(
-                  text: intl.DateFormat('HH:mm').format(
-                      DateTime.fromMillisecondsSinceEpoch(marker.timestamp)),
-                  style: TextStyle(color: marker.color, fontSize: 17.0),
+                  text: getTimeLabel(marker.timestamp, visibeMarkersCount),
+                  style: TextStyle(
+                      color: marker.color, fontSize: isMobile() ? 12.0 : 12.0),
                 ),
               )
                 ..textDirection = TextDirection.ltr
                 ..layout();
               final topPadding = params.style.timeLabelHeight - timeTp.height;
-              timeTp.paint(
-                  canvas,
-                  Offset(
-                    x - timeTp.width / 2,
-                    params.chartHeight + topPadding,
-                  ));
+              Offset delta = Offset(
+                x - timeTp.height,
+                params.chartHeight + topPadding,
+              );
+              Offset center =
+                  Offset(x - timeTp.width / 2, params.chartHeight + topPadding);
+
+              // rotate for 1 min only
+              if (params.candleTimePeriod == 60 * 1000) {
+                Offset pivot = timeTp.size.center(delta);
+                canvas.save();
+                canvas.translate(pivot.dx, pivot.dy);
+                canvas.rotate(-pi / 2);
+                canvas.translate(-pivot.dx, -pivot.dy);
+                timeTp.paint(canvas, delta);
+                canvas.restore();
+              } else {
+                timeTp.paint(canvas, center);
+              }
               painted = true;
             }
           }

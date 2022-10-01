@@ -91,6 +91,8 @@ class InteractiveChart extends StatefulWidget {
   /// Show markers price lines
   ///
   final bool? showMarkersTimeLines;
+  // Show volume
+  final bool? showVolume;
 
   const InteractiveChart({
     Key? key,
@@ -109,6 +111,7 @@ class InteractiveChart extends StatefulWidget {
     this.onCandleResize,
     this.showMarkersPriceLines = false,
     this.showMarkersTimeLines = false,
+    this.showVolume = true,
   })  : this.style = style ?? const ChartStyle(),
         assert(candles.length >= 3,
             "InteractiveChart requires 3 or more CandleData"),
@@ -122,6 +125,10 @@ class InteractiveChart extends StatefulWidget {
 
   @override
   _InteractiveChartState createState() => _InteractiveChartState();
+
+  void reloadChart() {
+    (key as GlobalKey<_InteractiveChartState>).currentState?.reloadChart();
+  }
 }
 
 class _InteractiveChartState extends State<InteractiveChart> {
@@ -142,6 +149,10 @@ class _InteractiveChartState extends State<InteractiveChart> {
   late double _prevStartOffset;
   late Offset _initialFocalPoint;
   PainterParams? _prevParams; // used in onTapUp event
+
+  void reloadChart() {
+    print("Reload chart called");
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -208,12 +219,21 @@ class _InteractiveChartState extends State<InteractiveChart> {
             .whereType<double>()
             .fold(double.infinity, min);
 
+        // find fits candle in indicators witn non-null value
+        List<double> indicatorStartList = [];
+        for (int j = 0; j < widget.candles.first.indicators.length; j++) {
+          // assumes at least 1 value not null in indicator list
+          CandleData first = widget.candles
+              .firstWhere((candle) => candle.indicators[j] != null);
+          indicatorStartList.add(first.indicators[j]!);
+        }
         final child = TweenAnimationBuilder(
           tween: PainterParamsTween(
             end: PainterParams(
               symbolLabel: widget.symbolLabel,
               timeAgrLabel: widget.timeAgrLabel,
               candles: candlesInRange,
+              indicatorStartList: indicatorStartList,
               markers: markersInRange,
               candleTimePeriod: widget.candleTimePeriod,
               style: widget.style,
@@ -222,6 +242,7 @@ class _InteractiveChartState extends State<InteractiveChart> {
               startOffset: _startOffset,
               showMarkersPriceLines: widget.showMarkersPriceLines ?? false,
               showMarketsTimeLines: widget.showMarkersTimeLines ?? false,
+              showVolume: widget.showVolume ?? false,
               maxPrice: maxPrice,
               minPrice: minPrice,
               maxVol: maxVol,
@@ -321,12 +342,14 @@ class _InteractiveChartState extends State<InteractiveChart> {
 
   _handleResize(double w) {
     if (w == _prevChartWidth) return;
+    int count = 0;
     if (_prevChartWidth != null) {
       // Re-clamp when size changes (e.g. screen rotation)
       _candleWidth = _candleWidth.clamp(
         _getMinCandleWidth(w),
         _getMaxCandleWidth(w),
       );
+      //print('Candle width $_candleWidth secreen width $w');
       _startOffset = _startOffset.clamp(
         0,
         _getMaxStartOffset(w, _candleWidth),
@@ -336,7 +359,7 @@ class _InteractiveChartState extends State<InteractiveChart> {
       // If data is shorter, we use the whole range.
       final start = widget.startVisibleCandle;
 
-      final count = min(
+      count = min(
         widget.candles.length,
         widget.initialVisibleCandleCount,
       );
@@ -351,6 +374,7 @@ class _InteractiveChartState extends State<InteractiveChart> {
       }
     }
     _prevChartWidth = w;
+    //print('Candle width $_candleWidth secreen width $w count $count');
   }
 
   // The narrowest candle width, i.e. when drawing all available data points.
