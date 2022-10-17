@@ -22,6 +22,8 @@ class CandleData {
 
   /// The volume information of this data point.
   final double? volume;
+  // potencial PL on trade close on this candle
+  double? pl;
 
   /// Data holder for additional trend lines, for this data point.
   ///
@@ -40,6 +42,7 @@ class CandleData {
   ///
   ///
   List<double?> indicators;
+  List<CandleData?> benchmarks;
 
   CandleData({
     required this.timestamp,
@@ -48,10 +51,13 @@ class CandleData {
     required this.volume,
     this.high,
     this.low,
+    this.pl,
     List<double?>? trends,
     List<double?>? indicators,
+    List<CandleData?>? benchmarks,
   })  : this.trends = List.unmodifiable(trends ?? []),
-        this.indicators = List.unmodifiable(indicators ?? []);
+        this.indicators = List.unmodifiable(indicators ?? []),
+        this.benchmarks = List.unmodifiable(benchmarks ?? []);
 
   static List<double?> computeMA(List<CandleData> data, [int period = 7]) {
     // If data is not at least twice as long as the period, return nulls.
@@ -99,6 +105,51 @@ class CandleData {
     }
 
     return result;
+  }
+
+  static void setBenchmark(List<CandleData> data, List<CandleData> benchmark) {
+    // find ovelapping time marks
+    int j = 0;
+    for (int i = 0; i < data.length; i++) {
+      while (benchmark[j].timestamp < data[i].timestamp) {
+        j++;
+      }
+      if (benchmark[j].timestamp == data[i].timestamp) {
+        data[i].benchmarks = [benchmark[j]];
+      } else {
+        data[i].benchmarks = [];
+      }
+    }
+  }
+
+  static void setCandlePL(
+      List<CandleData> data, List<Map<String, dynamic>> trades) {
+    // find ovelapping time marks
+    const String timestampTag = 'timestamp';
+    const String plTag = 'p&l';
+    int j = 0;
+    for (int i = 0; i < data.length; i++) {
+      while (j < (trades.length - 1) &&
+          trades[j][timestampTag] < data[i].timestamp) {
+        j++;
+      }
+      while (j < trades.length) {
+        if (trades[j][timestampTag] >= data[i].timestamp &&
+            trades[j][timestampTag] < data[i + 1].timestamp) {
+          double pl = double.parse(trades[j][plTag]);
+          if (data[i].pl != null) {
+            data[i].pl = data[i].pl! + pl;
+          } else {
+            data[i].pl = pl;
+          }
+          j++;
+        } else if (trades[j][plTag].isEmpty) {
+          j++;
+        } else {
+          break;
+        }
+      }
+    }
   }
 
   @override

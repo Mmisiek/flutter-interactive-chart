@@ -20,11 +20,16 @@ class PainterParams {
   final bool showMarkersPriceLines;
   final bool showMarketsTimeLines;
   final bool showVolume;
+  final bool showPL;
 
   final double maxPrice;
   final double minPrice;
   final double maxVol;
   final double minVol;
+  final double maxBench;
+  final double minBench;
+  final double maxPL;
+  final double minPL;
 
   final double xShift;
   final Offset? tapPosition;
@@ -45,10 +50,15 @@ class PainterParams {
     required this.showMarkersPriceLines,
     required this.showMarketsTimeLines,
     required this.showVolume,
+    required this.showPL,
     required this.maxPrice,
     required this.minPrice,
     required this.maxVol,
     required this.minVol,
+    required this.maxBench,
+    required this.minBench,
+    required this.maxPL,
+    required this.minPL,
     required this.xShift,
     required this.tapPosition,
     required this.leadingTrends,
@@ -74,6 +84,9 @@ class PainterParams {
   double fitPrice(double y) =>
       priceHeight * (maxPrice - y) / (maxPrice - minPrice) + candleWidth;
 
+  double fitBenchmark(double y) =>
+      priceHeight * (maxBench - y) / (maxBench - minBench) + candleWidth;
+
   double fitVolume(double y) {
     final gap = 12; // the gap between price bars and volume bars
     final baseAmount = 2; // display at least "something" for the lowest volume
@@ -97,6 +110,31 @@ class PainterParams {
     final volGridSize = (volumeHeight - baseAmount - gap) / (maxVol - minVol);
     final vol = (y - minVol) * volGridSize;
     return volumeHeight - vol + priceHeight - baseAmount;
+  }
+
+  double fitPL(double y) {
+    final gap = 12; // the gap between price bars and volume bars
+    final baseAmount = 0; // display at least "something" for the lowest volume
+
+    if (maxPL == minPL) {
+      // Apparently max and min values (in the current visible range, at least)
+      // are the same. It's likely they passed in a bunch of zeroes, because
+      // they don't have real volume data or don't want to draw volumes.
+      assert(() {
+        if (style.volumeHeightFactor != 0) {
+          print('If you do not want to show PL, '
+              'make sure to set `volumeHeightFactor` (ChartStyle) to zero.');
+        }
+        return true;
+      }());
+      // if they are both set to 0 just dot show it
+      // Since they are equal, we just draw all volume bars as half height.
+      return priceHeight + volumeHeight / 2;
+    }
+
+    final volGridSize = (volumeHeight - baseAmount - gap) / (maxPL - minPL);
+    final pl = (y - minPL) * volGridSize;
+    return volumeHeight - pl + priceHeight - baseAmount;
   }
 
   double fitInd(double y) {
@@ -127,10 +165,15 @@ class PainterParams {
       showMarkersPriceLines: b.showMarkersPriceLines,
       showMarketsTimeLines: b.showMarketsTimeLines,
       showVolume: b.showVolume,
+      showPL: b.showPL,
       maxPrice: lerpField((p) => p.maxPrice),
       minPrice: lerpField((p) => p.minPrice),
       maxVol: lerpField((p) => p.maxVol),
       minVol: lerpField((p) => p.minVol),
+      maxBench: lerpField((p) => p.maxBench),
+      minBench: lerpField((p) => p.minBench),
+      maxPL: lerpField((p) => p.maxPL),
+      minPL: lerpField((p) => p.minPL),
       xShift: b.xShift,
       tapPosition: b.tapPosition,
       leadingTrends: b.leadingTrends,
@@ -149,7 +192,11 @@ class PainterParams {
     if (maxPrice != other.maxPrice ||
         minPrice != other.minPrice ||
         maxVol != other.maxVol ||
-        minVol != other.minVol) return true;
+        minVol != other.minVol ||
+        maxBench != other.maxBench ||
+        minBench != other.minBench ||
+        maxPL != other.maxPL ||
+        minPL != other.minPL) return true;
 
     if (tapPosition != other.tapPosition) return true;
 

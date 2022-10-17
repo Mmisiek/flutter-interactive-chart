@@ -9,6 +9,7 @@ import 'package:intl/intl.dart' as intl;
 import 'candle_data.dart';
 import 'painter_params.dart';
 import 'marker_data.dart';
+import 'double_extension.dart';
 
 typedef TimeLabelGetter = String Function(int timestamp, int visibleDataCount);
 typedef PriceLabelGetter = String Function(double price);
@@ -68,6 +69,7 @@ class ChartPainter extends CustomPainter {
       }
     }
     _drawPriceGridAndLabels(canvas, params, skipPriceTicks);
+    _drawLowerGridAndLabels(canvas, params);
     // Draw prices, volumes & trend line
     canvas.save();
     canvas.clipRect(Offset.zero & Size(params.chartWidth, params.chartHeight));
@@ -117,14 +119,26 @@ class ChartPainter extends CustomPainter {
         low = params.candles[i].low ?? 0.0;
       }
     }
-    String header = 'Open:' +
-        open.toStringAsFixed(2) +
-        ' close:' +
-        close.toStringAsFixed(2) +
-        ' high:' +
-        high.toStringAsFixed(2) +
-        ' low:' +
-        low.toStringAsFixed(2);
+    String header = '';
+    if (isMobile()) {
+      header = 'Open: \$' +
+          open.toStringAsFixed(2) +
+          ' close: \$' +
+          close.toStringAsFixed(2) +
+          '\nHigh: \$' +
+          high.toStringAsFixed(2) +
+          ' low: \$' +
+          low.toStringAsFixed(2);
+    } else {
+      header = 'Open: \$' +
+          open.toStringAsFixed(2) +
+          ' close: \$' +
+          close.toStringAsFixed(2) +
+          ' high: \$' +
+          high.toStringAsFixed(2) +
+          ' low: \$' +
+          low.toStringAsFixed(2);
+    }
     final headerTp = TextPainter(
       text: TextSpan(
         text: header,
@@ -278,6 +292,83 @@ class ChartPainter extends CustomPainter {
     });
   }
 
+  double roundLageNumber(double number, int digits) {
+    double gridRound = number;
+    double shift = 0;
+    while (gridRound > (10 * digits)) {
+      gridRound /= 10;
+      shift++;
+    }
+    gridRound = gridRound.roundToDouble();
+    while (shift > 0) {
+      gridRound *= 10;
+      shift--;
+    }
+    return gridRound;
+  }
+
+  void _drawLowerGridAndLabels(canvas, PainterParams params) {
+    List<double> gridPoints = [];
+    List<double> gridY = [];
+    int ticks = 10;
+    gridPoints.clear();
+    double gridSpread = 0.0, gridStep = 0.0;
+    double gridMin = 0.0, gridMax = 0.0;
+    if (params.showVolume) {
+      gridSpread = params.maxVol - params.minVol;
+      gridMin = roundLageNumber(params.minVol, 1);
+      gridStep = roundLageNumber(gridSpread / (ticks + 0.0), 1);
+      // maybe PL ?
+    } else if (params.showPL) {
+      gridSpread = params.maxPL - params.minPL;
+      gridStep = roundLageNumber(gridSpread / (ticks + 0.0), 1);
+      int ratio = (params.minPL / gridStep).round();
+      gridMin = roundLageNumber(gridStep * ratio, 1);
+    } else {
+      return;
+    }
+
+    //if (priceStep > 1.0) {
+    for (int i = 0; i < ticks; i++) {
+      gridPoints.add(gridMin + i * gridStep);
+    }
+
+    if (params.showVolume) {
+      gridPoints.forEach((y) {
+        gridY.add(params.fitVolume(y));
+      });
+    } else if (params.showPL) {
+      gridPoints.forEach((y) {
+        gridY.add(params.fitPL(y));
+      });
+    }
+
+    for (int i = 0; i < gridPoints.length; i++) {
+      canvas.drawLine(
+        Offset(0, gridY[i]),
+        Offset(params.chartWidth, gridY[i]),
+        Paint()
+          ..strokeWidth = 0.5
+          ..color = params.style.priceGridLineColor,
+      );
+
+      final priceTp = TextPainter(
+        text: TextSpan(
+          text: gridPoints[i].asAbbreviated(),
+          style: params.style.priceLabelStyle,
+        ),
+      )
+        ..textDirection = TextDirection.ltr
+        ..layout();
+      priceTp.paint(
+          canvas,
+          Offset(
+            params.chartWidth + 4,
+            gridY[i] - priceTp.height / 2,
+          ));
+    }
+  }
+
   void _drawTradeDaysGridlines(canvas, PainterParams params) {
     List<double> gridShadePoints = [];
     final candle0 = params.candles[0];
@@ -417,11 +508,71 @@ class ChartPainter extends CustomPainter {
     final volumeWidth = max(params.candleWidth * 0.9, 0.9);
     //print(
     //    'candle width ${params.candleWidth} thick $thickWidth thin $thinWidth');
+    // plot benchamrks
+    candle.benchmarks.forEach((element) {
+      final open = element!.open;
+      final close = element!.close;
+      final high = element!.high;
+      final low = element!.low;
+      if (open != null && close != null) {
+        final color = open == close
+            ? params.style.volumeColor
+            : (open > close
+                ? params.style.priceLossColor.withAlpha(180)
+                : params.style.priceGainColor.withAlpha(180));
+
+        if (high != null && low != null) {
+          final top = open > close ? open : close;
+          final bottom = open < close ? open : close;
+          canvas.drawLine(
+            Offset(x, params.fitBenchmark(high)),
+            Offset(x, params.fitBenchmark(top)),
+            Paint()
+              ..strokeWidth = thinWidth
+              ..style = PaintingStyle.stroke
+              ..color = color,
+          );
+          canvas.drawLine(
+            Offset(x, params.fitBenchmark(bottom)),
+            Offset(x, params.fitBenchmark(low)),
+            Paint()
+              ..strokeWidth = thinWidth
+              ..style = PaintingStyle.stroke
+              ..color = color,
+          );
+        }
+        if (open == close) {
+          canvas.drawLine(
+            Offset(x - thickWidth / 2, params.fitBenchmark(open)),
+            Offset(x + thickWidth / 2, params.fitBenchmark(close)),
+            Paint()
+              ..strokeWidth = thinWidth
+              ..style = PaintingStyle.stroke
+              ..color = color,
+          );
+        } else {
+          canvas.drawRect(
+            Rect.fromLTRB(
+              x - thickWidth / 2,
+              params.fitBenchmark(open),
+              x + thickWidth / 2,
+              params.fitBenchmark(close),
+            ),
+            Paint()
+              ..strokeWidth = thinWidth
+              ..style = PaintingStyle.stroke
+              ..color = color,
+          );
+        }
+      }
+    });
+
     // Draw price bar
     final open = candle.open;
     final close = candle.close;
     final high = candle.high;
     final low = candle.low;
+
     if (open != null && close != null) {
       final color = open == close
           ? params.style.volumeColor
@@ -479,6 +630,36 @@ class ChartPainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..color = color,
         );
+      }
+    } else {
+      // if not Volume then maybe P&L ?
+      final pl = candle.pl;
+      Color color = params.style.volumeColor.withAlpha(200);
+      if (pl != null) {
+        pl > 0
+            ? color = params.style.priceGainColor.withAlpha(200)
+            : pl < 0
+                ? color = params.style.priceLossColor.withAlpha(200)
+                : color = params.style.volumeColor.withAlpha(200);
+        if (pl == 0) {
+          canvas.drawLine(
+            Offset(x, params.fitPL(-2)),
+            Offset(x, params.fitPL(2)),
+            Paint()
+              ..strokeWidth = volumeWidth
+              ..style = PaintingStyle.stroke
+              ..color = color,
+          );
+        } else {
+          canvas.drawLine(
+            Offset(x, params.fitPL(0)),
+            Offset(x, params.fitPL(pl)),
+            Paint()
+              ..strokeWidth = volumeWidth
+              ..style = PaintingStyle.stroke
+              ..color = color,
+          );
+        }
       }
     }
     // Draw trend line
@@ -594,9 +775,10 @@ class ChartPainter extends CustomPainter {
             }*/
             canvas.drawRect(
               Rect.fromCenter(
-                  center: Offset(x, y),
-                  width: params.candleWidth * 0.7,
-                  height: params.candleWidth * 0.7),
+                center: Offset(x, y),
+                width: max(params.candleWidth, 12) * 0.7,
+                height: max(params.candleWidth, 12) * 0.7,
+              ),
               Paint()
                 ..color = priceProblem
                     ? Colors.orange
@@ -606,8 +788,8 @@ class ChartPainter extends CustomPainter {
             canvas.drawRect(
               Rect.fromCenter(
                   center: Offset(x, y),
-                  width: params.candleWidth * 0.8,
-                  height: params.candleWidth * 0.8),
+                  width: max(params.candleWidth, 12) * 0.8,
+                  height: max(params.candleWidth, 12) * 0.8),
               Paint()
                 ..strokeWidth = extraThinWidth
                 ..style = PaintingStyle.stroke

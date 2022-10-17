@@ -10,6 +10,7 @@ import 'chart_painter.dart';
 import 'chart_style.dart';
 import 'painter_params.dart';
 import 'marker_data.dart';
+import 'double_extension.dart';
 
 class InteractiveChart extends StatefulWidget {
   /// Symbol label
@@ -218,6 +219,68 @@ class _InteractiveChartState extends State<InteractiveChart> {
             .map((c) => c.volume)
             .whereType<double>()
             .fold(double.infinity, min);
+        bool showPL = false;
+        double maxPL = candlesInRange
+            .map((c) => c.pl)
+            .whereType<double>()
+            .fold(double.negativeInfinity, max);
+        double minPL = candlesInRange
+            .map((c) => c.pl)
+            .whereType<double>()
+            .fold(double.infinity, min);
+        if (maxPL == double.negativeInfinity && minPL == double.infinity) {
+          maxPL = 0;
+          minPL = 0;
+        } else {
+          showPL = true;
+          // check for single operation
+          if (maxPL == minPL) {
+            if (maxPL == 0) {
+              // if there is zero trade make sure it is visible
+              // around 0 as grey bar
+              minPL = -200;
+              maxPL = 200;
+            }
+            if (maxPL < 0) {
+              maxPL = 0;
+            }
+            if (maxPL > 0) {
+              minPL = 0;
+            }
+          }
+        }
+
+        double maxBench = double.negativeInfinity;
+        double minBench = double.infinity;
+        bool benchSet = false;
+        // look for benchmark range
+        int countBench = 0;
+        for (int j = 0; j < candlesInRange.length; j++) {
+          candlesInRange[j].benchmarks.forEach((element) {
+            double? high = highest(element!);
+            if (high != null) {
+              if (high! > maxBench) {
+                maxBench = high;
+                benchSet = true;
+              }
+              countBench++;
+            }
+            double? low = lowest(element!);
+            if (low != null) {
+              if (low! < minBench) {
+                minBench = low;
+                benchSet = true;
+              }
+              countBench++;
+            }
+          });
+        }
+        if (benchSet == false) {
+          maxBench = 0;
+          minBench = 0;
+        } else {
+          print("Benchmark max $maxBench min $minBench count $countBench");
+        }
 
         // find fits candle in indicators witn non-null value
         List<double> indicatorStartList = [];
@@ -243,10 +306,15 @@ class _InteractiveChartState extends State<InteractiveChart> {
               showMarkersPriceLines: widget.showMarkersPriceLines ?? false,
               showMarketsTimeLines: widget.showMarkersTimeLines ?? false,
               showVolume: widget.showVolume ?? false,
+              showPL: showPL,
               maxPrice: maxPrice,
               minPrice: minPrice,
               maxVol: maxVol,
               minVol: minVol,
+              maxBench: maxBench,
+              minBench: minBench,
+              maxPL: maxPL,
+              minPL: minPL,
               xShift: xShift,
               tapPosition: _tapPosition,
               leadingTrends: leadingTrends,
@@ -412,7 +480,7 @@ class _InteractiveChartState extends State<InteractiveChart> {
     final date = intl.DateFormat.yMMMd()
         .add_Hms()
         .format(DateTime.fromMillisecondsSinceEpoch(candle.timestamp));
-    return {
+    Map<String, String> map = {
       "Date": date,
       "Open": candle.open?.toStringAsFixed(2) ?? "-",
       "High": candle.high?.toStringAsFixed(2) ?? "-",
@@ -420,6 +488,10 @@ class _InteractiveChartState extends State<InteractiveChart> {
       "Close": candle.close?.toStringAsFixed(2) ?? "-",
       "Volume": candle.volume?.asAbbreviated() ?? "-",
     };
+    if (candle.pl != null) {
+      map["P&L"] = candle.pl?.toString() ?? "-";
+    }
+    return map;
   }
 
   void _fireOnTapEvent() {
@@ -429,21 +501,5 @@ class _InteractiveChartState extends State<InteractiveChart> {
     final selected = params.getCandleIndexFromOffset(dx);
     final candle = params.candles[selected];
     widget.onTap?.call(candle);
-  }
-}
-
-extension Formatting on double {
-  String asPercent() {
-    final format = this < 100 ? "##0.00" : "#,###";
-    final v = intl.NumberFormat(format, "en_US").format(this);
-    return "${this >= 0 ? '+' : ''}$v%";
-  }
-
-  String asAbbreviated() {
-    if (this < 1000) return this.toStringAsFixed(3);
-    if (this >= 1e18) return this.toStringAsExponential(3);
-    final s = intl.NumberFormat("#,###", "en_US").format(this).split(",");
-    const suffixes = ["K", "M", "B", "T", "Q"];
-    return "${s[0]}.${s[1]}${suffixes[s.length - 2]}";
   }
 }
