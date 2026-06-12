@@ -35,6 +35,10 @@ class PainterParams {
   final Offset? tapPosition;
   final List<double?>? leadingTrends;
   final List<double?>? trailingTrends;
+  final List<double?>? leadingBenchmarkTrends;
+  final List<double?>? trailingBenchmarkTrends;
+
+  final bool showRLines;
 
   PainterParams({
     required this.symbolLabel,
@@ -63,6 +67,9 @@ class PainterParams {
     required this.tapPosition,
     required this.leadingTrends,
     required this.trailingTrends,
+    required this.leadingBenchmarkTrends,
+    required this.trailingBenchmarkTrends,
+    required this.showRLines,
   });
 
   double get chartWidth => // width without price labels
@@ -79,6 +86,20 @@ class PainterParams {
     final adjustedPos = x - xShift + candleWidth / 2;
     final i = adjustedPos ~/ candleWidth;
     return i;
+  }
+
+  int getMarkerIndexFromOffset(Offset _offset) {
+    Offset adjOffset = Offset(_offset.dx - xShift, _offset.dy);
+    int index = -1;
+    for (int i = 0; i < markers.length; i++) {
+      if (markers[i].rect != null) {
+        if (markers[i].rect!.contains(adjOffset)) {
+          index = i;
+          break;
+        }
+      }
+    }
+    return index;
   }
 
   double fitPrice(double y) =>
@@ -131,9 +152,21 @@ class PainterParams {
       // Since they are equal, we just draw all volume bars as half height.
       return priceHeight + volumeHeight / 2;
     }
-
-    final volGridSize = (volumeHeight - baseAmount - gap) / (maxPL - minPL);
-    final pl = (y - minPL) * volGridSize;
+    // check if not all PL vbars on the same side
+    double minPLAdj = minPL, maxPLAdj = maxPL;
+    if (maxPL > 0 && minPL > 0) {
+      // then use 0 as base (diffrent than for voume where minPL is lower end)
+      minPLAdj = 0;
+      maxPLAdj = maxPL;
+    }
+    if (maxPL < 0 && minPL < 0) {
+      // then use 0 as base (diffrent than for voume where minPL is lower end)
+      maxPLAdj = 0;
+      minPLAdj = minPL;
+    }
+    final volGridSize =
+        (volumeHeight - baseAmount - gap) / (maxPLAdj - minPLAdj);
+    final pl = (y - minPLAdj) * volGridSize;
     return volumeHeight - pl + priceHeight - baseAmount;
   }
 
@@ -178,6 +211,9 @@ class PainterParams {
       tapPosition: b.tapPosition,
       leadingTrends: b.leadingTrends,
       trailingTrends: b.trailingTrends,
+      leadingBenchmarkTrends: b.leadingBenchmarkTrends,
+      trailingBenchmarkTrends: b.trailingBenchmarkTrends,
+      showRLines: b.showRLines,
     );
   }
 
@@ -202,6 +238,9 @@ class PainterParams {
 
     if (leadingTrends != other.leadingTrends ||
         trailingTrends != other.trailingTrends) return true;
+
+    if (leadingBenchmarkTrends != other.leadingBenchmarkTrends ||
+        trailingBenchmarkTrends != other.trailingBenchmarkTrends) return true;
 
     if (style != other.style) return true;
 

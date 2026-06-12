@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 
 import '../interactive_chart.dart';
@@ -94,6 +95,8 @@ class InteractiveChart extends StatefulWidget {
   final bool? showMarkersTimeLines;
   // Show volume
   final bool? showVolume;
+  // Show R lines
+  final bool showRLines;
 
   const InteractiveChart({
     Key? key,
@@ -113,6 +116,7 @@ class InteractiveChart extends StatefulWidget {
     this.showMarkersPriceLines = false,
     this.showMarkersTimeLines = false,
     this.showVolume = true,
+    this.showRLines = false,
   })  : this.style = style ?? const ChartStyle(),
         assert(candles.length >= 3,
             "InteractiveChart requires 3 or more CandleData"),
@@ -238,8 +242,8 @@ class _InteractiveChartState extends State<InteractiveChart> {
             if (maxPL == 0) {
               // if there is zero trade make sure it is visible
               // around 0 as grey bar
-              minPL = -200;
-              maxPL = 200;
+              minPL = -10;
+              maxPL = 10;
             }
             if (maxPL < 0) {
               maxPL = 0;
@@ -259,15 +263,15 @@ class _InteractiveChartState extends State<InteractiveChart> {
           candlesInRange[j].benchmarks.forEach((element) {
             double? high = highest(element!);
             if (high != null) {
-              if (high! > maxBench) {
+              if (high > maxBench) {
                 maxBench = high;
                 benchSet = true;
               }
               countBench++;
             }
-            double? low = lowest(element!);
+            double? low = lowest(element);
             if (low != null) {
-              if (low! < minBench) {
+              if (low < minBench) {
                 minBench = low;
                 benchSet = true;
               }
@@ -275,11 +279,31 @@ class _InteractiveChartState extends State<InteractiveChart> {
             }
           });
         }
+        List<double?>? leadingBenchmarkTrends;
+        List<double?>? trailingBenchmarkTrends;
         if (benchSet == false) {
           maxBench = 0;
           minBench = 0;
         } else {
           print("Benchmark max $maxBench min $minBench count $countBench");
+          try {
+            int idx = 1;
+            while (widget.candles.at(start - idx)?.benchmarks.isEmpty ??
+                true && (start - idx) >= 0) {
+              idx++;
+            }
+            leadingBenchmarkTrends =
+                widget.candles.at(start - idx)?.benchmarks.first?.trends;
+            idx = 1;
+            while (widget.candles.at(end + idx)?.benchmarks.isEmpty ??
+                true && (end + idx) <= widget.candles.length) {
+              idx++;
+            }
+            trailingBenchmarkTrends =
+                widget.candles.at(end + idx)?.benchmarks.first?.trends;
+          } catch (e) {
+            print(e);
+          }
         }
 
         // find fits candle in indicators witn non-null value
@@ -319,6 +343,9 @@ class _InteractiveChartState extends State<InteractiveChart> {
               tapPosition: _tapPosition,
               leadingTrends: leadingTrends,
               trailingTrends: trailingTrends,
+              leadingBenchmarkTrends: leadingBenchmarkTrends,
+              trailingBenchmarkTrends: trailingBenchmarkTrends,
+              showRLines: widget.showRLines,
             ),
           ),
           duration: Duration(milliseconds: 300),
@@ -356,7 +383,15 @@ class _InteractiveChartState extends State<InteractiveChart> {
           child: GestureDetector(
             // Tap and hold to view candle details
             onTapDown: (details) => setState(() {
-              _tapPosition = details.localPosition;
+              final RenderBox? referenceBox =
+                  context.findRenderObject() as RenderBox;
+              if (referenceBox != null) {
+                _tapPosition =
+                    referenceBox.globalToLocal(details.globalPosition);
+              } else {
+                _tapPosition = details.localPosition;
+              }
+              _fireTouchMarkerEvent();
             }),
             onTapCancel: () => setState(() => _tapPosition = null),
             onTapUp: (_) {
@@ -373,6 +408,50 @@ class _InteractiveChartState extends State<InteractiveChart> {
         );
       },
     );
+  }
+
+  void _fireTouchMarkerEvent() {
+    if (_prevParams == null || _tapPosition == null) return;
+    final params = _prevParams!;
+    final index = params.getMarkerIndexFromOffset(_tapPosition!);
+    print(_tapPosition.toString());
+    //final index = widget.markers
+    //    .lastIndexWhere((marker) => marker.rect!.contains(_tapPosition!));
+    if (index != -1) {
+      final marker = widget.markers[index];
+      final List<String> stops = marker.stopPrices
+          .map((price) =>
+              price.item1.toESTzone().toHMMMString() + price.item2.toString())
+          .toList();
+      final List<String> limits =
+          marker.limitPrices.map((price) => price.item2.toString()).toList();
+      showDialog<void>(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text(
+                '${marker.symbol} ${marker.side}',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: Text(
+                  'Volume: ${marker.volume}\nPrice: \$${marker.price}\nStops: \$$stops\nLimits: \$$limits',
+                  textAlign: TextAlign.left,
+                  maxLines: 4),
+              actions: <Widget>[
+                TextButton(
+                  style: TextButton.styleFrom(
+                    textStyle: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  child: const Text('Close'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ],
+            );
+          });
+    }
   }
 
   _onScaleStart(Offset focalPoint) {
@@ -486,7 +565,7 @@ class _InteractiveChartState extends State<InteractiveChart> {
       "High": candle.high?.toStringAsFixed(2) ?? "-",
       "Low": candle.low?.toStringAsFixed(2) ?? "-",
       "Close": candle.close?.toStringAsFixed(2) ?? "-",
-      "Volume": candle.volume?.asAbbreviated() ?? "-",
+      "Volume": candle.volume?.asAbbreviated(2) ?? "-",
     };
     if (candle.pl != null) {
       map["P&L"] = candle.pl?.toString() ?? "-";

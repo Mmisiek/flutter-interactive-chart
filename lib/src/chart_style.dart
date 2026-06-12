@@ -23,6 +23,7 @@ class ChartStyle {
   /// The style of price labels (on the right of the chart).
   final TextStyle priceLabelStyle;
   final TextStyle summaryLabelStyle;
+  final TextStyle lowerGridTextStyle;
 
   /// The style of overlay texts. These texts are drawn on top of the
   /// background color specified in [overlayBackgroundColor].
@@ -31,7 +32,7 @@ class ChartStyle {
   final TextStyle overlayTextStyle;
 
   /// The color to use when the `close` price is higher than `open` price.
-  final Color priceGainColor;
+  final Color priceProfitColor;
 
   /// The color to use when the `close` price is lower than `open` price.
   final Color priceLossColor;
@@ -62,6 +63,12 @@ class ChartStyle {
   /// This replaces 5 point grid with 12 spread by price not size of screen
   final bool enableMinorGrid;
 
+  // Defines color of chart backgound symbol
+  final Color backgroundTextColor;
+
+  // Defines background color for out of trading hours
+  final Color secondaryBackgroundColor;
+
   const ChartStyle({
     this.volumeHeightFactor = 0.2,
     this.priceLabelWidth = 48.0,
@@ -78,11 +85,15 @@ class ChartStyle {
       fontSize: 12,
       color: Colors.black,
     ),
+    this.lowerGridTextStyle = const TextStyle(
+      fontSize: 12,
+      color: Colors.black,
+    ),
     this.overlayTextStyle = const TextStyle(
       fontSize: 16,
       color: Colors.white,
     ),
-    this.priceGainColor = Colors.green,
+    this.priceProfitColor = Colors.green,
     this.priceLossColor = Colors.red,
     this.volumeColor = Colors.grey,
     this.trendLineStyles = const [],
@@ -91,5 +102,7 @@ class ChartStyle {
     this.selectionHighlightColor = const Color(0x33757575),
     this.overlayBackgroundColor = const Color(0xEE757575),
     this.enableMinorGrid = false,
+    this.backgroundTextColor = Colors.grey,
+    this.secondaryBackgroundColor = const Color(0xFFEEEEEE),
   });
 }

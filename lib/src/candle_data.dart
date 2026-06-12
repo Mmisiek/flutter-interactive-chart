@@ -37,6 +37,7 @@ class CandleData {
   /// or `clear` methods on the list. Always assign a new list if values
   /// are changed. Otherwise the UI might not be updated.
   List<double?> trends;
+  List<String?> trendNames;
 
   /// Data holder for indicators to overlap with volume (lower chart place)
   ///
@@ -53,14 +54,17 @@ class CandleData {
     this.low,
     this.pl,
     List<double?>? trends,
+    List<String?>? trendNames,
     List<double?>? indicators,
     List<CandleData?>? benchmarks,
   })  : this.trends = List.unmodifiable(trends ?? []),
+        this.trendNames = List.unmodifiable(trendNames ?? []),
         this.indicators = List.unmodifiable(indicators ?? []),
         this.benchmarks = List.unmodifiable(benchmarks ?? []);
 
-  static List<double?> computeMA(List<CandleData> data, [int period = 7]) {
-    // If data is not at least twice as long as the period, return nulls.
+  static List<double?> computeMA(List<CandleData> data, int? period) {
+    // If data is not at least twice as long as the period, return nulls
+    if (period == null) return List.filled(data.length, null);
     if (data.length < period * 2) return List.filled(data.length, null);
 
     final List<double?> result = [];
@@ -68,7 +72,8 @@ class CandleData {
     final firstPeriod =
         data.take(period).map((d) => d.close).whereType<double>();
     double ma = firstPeriod.reduce((a, b) => a + b) / firstPeriod.length;
-    result.addAll(List.filled(period, null));
+    result.addAll(List.filled(period - 1, null));
+    result.add(ma);
 
     // Compute the moving average for the rest of the data points.
     for (int i = period; i < data.length; i++) {
@@ -78,7 +83,34 @@ class CandleData {
         ma = (ma * period + curr - prev) / period;
         result.add(ma);
       } else {
-        result.add(null);
+        result.add(result.last);
+      }
+    }
+    return result;
+  }
+
+  static List<double?> computeEMA(List<CandleData> data, int? period) {
+    // If data is not at least twice as long as the period, return nulls
+    if (period == null) return List.filled(data.length, null);
+    if (data.length < period * 2) return List.filled(data.length, null);
+    final double mutiplier = (2 / (period + 1));
+    final List<double?> result = [];
+    // Skip the first [period] data points. For example, skip 7 data points.
+    final firstPeriod =
+        data.take(period).map((d) => d.close).whereType<double>();
+    double ma = firstPeriod.reduce((a, b) => a + b) / firstPeriod.length;
+    result.addAll(List.filled(period - 1, null));
+    result.add(ma);
+
+    // Compute the moving average for the rest of the data points.
+    for (int i = period; i < data.length; i++) {
+      final curr = data[i].close;
+      final prev = result.last;
+      if (curr != null && prev != null) {
+        ma = (curr * mutiplier + (prev * (1 - mutiplier)));
+        result.add(ma);
+      } else {
+        result.add(result.last);
       }
     }
     return result;
@@ -111,13 +143,14 @@ class CandleData {
     // find ovelapping time marks
     int j = 0;
     for (int i = 0; i < data.length; i++) {
-      while (benchmark[j].timestamp < data[i].timestamp) {
+      while (benchmark[j].timestamp < data[i].timestamp &&
+          j < (benchmark.length - 1)) {
         j++;
       }
       if (benchmark[j].timestamp == data[i].timestamp) {
         data[i].benchmarks = [benchmark[j]];
-      } else {
-        data[i].benchmarks = [];
+      } else if (i > 0) {
+        data[i].benchmarks = data[i - 1].benchmarks;
       }
     }
   }
